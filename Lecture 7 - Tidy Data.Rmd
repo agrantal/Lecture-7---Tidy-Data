@@ -1,0 +1,166 @@
+---
+title: "Lecture 7 - Tidy Data"
+output: html_document
+---
+
+# Import 
+
+```{r}
+library(tidyverse)
+options(tibble.print_min = 5)
+```
+
+# Gather
+
+```{r}
+pulse_data = haven::read_sas("./sample data/public_pulse_data.sas7bdat") %>%
+  janitor::clean_names()
+pulse_data
+```
+We recognize that the BDI score is spread across four different columns when it should instead be diff obs for ONE column 
+
+```{r}
+pulse_tidy_data = gather(pulse_data, key = visit, value = bdi, bdi_score_bl:bdi_score_12m)
+pulse_tidy_data
+
+str(pulse_data) #to check the type of each column w/ a bdi score. they are all numeric
+```
+
+# Separate
+
+```{r}
+str 
+#lets us see the data. looking at the var 'visit' you realize that its obs are three words/sets of characters separated by underscores which is unhelpful when doing analysis. So we can either fix this using option 1 or 2 below. 
+```
+
+## Option 1: separate the three sets of characters into three diff columns and then remove the unncesssary columns
+```{r}
+separate(pulse_tidy_data, visit, into = c("remove_1", "remove_2", "visit"), sep = "_")
+```
+
+## Option 2: import, tidy, and transform the dataset with nested commands
+```{r}
+pulse_data = haven::read_sas("./sample data/public_pulse_data.sas7bdat") %>%
+  janitor::clean_names() %>%
+  gather(key = visit, value = bdi, bdi_score_bl:bdi_score_12m) %>%
+  separate(visit, into = c("remove_1", "remove_2", "visit"), sep = "_") %>% #cut apart the three sets of characters whereever there is an underscore
+  select(id, visit, everything(), -starts_with("remove")) %>% #keep id, visit, and all other vars except remove the vars that begin with 'remove'
+  mutate(visit = replace(visit, visit == "bl", "00m"),
+         visit = factor(visit, levels = str_c(c("00", "01", "06", "12"), "m"))) %>% #replace 'bl' values for 'visit' with '00m' values and specify that the factor variable 00 could be 01, 06, or 12 in addition to 00. the m following the two digits remains m, no other letter options
+  arrange(id, visit) #move the id column to the left of the visit column 
+
+print(pulse_data, n = 12)
+```
+
+##Tidy litters data
+```{r}
+litters_data = 
+  read_csv("./sample data/FAS_litters.csv", col_types = "ccddiiii") %>% 
+  janitor::clean_names() %>%
+  separate(group, into = c("dose", "day_of_tx"), sep = 3) %>%
+  mutate(dose = tolower(dose),
+         wt_gain = gd18_weight - gd0_weight) %>%
+  arrange(litter_number)
+
+litters_data
+```
+
+# Learning Assessment 
+
+```{r}
+litters_data = 
+  read_csv("./sample data/FAS_litters.csv", col_types = "ccddiiii") %>% 
+  janitor::clean_names() %>%
+  select(gd0_weight, gd18_weight, litter_number) %>%
+  gather(key=gd, value = weight, gd0_weight:gd18_weight) %>% #'key' refers to the column and 'value' refers to what goes in each cell 
+  mutate(gd = recode(gd, "gd0_weight" = 0, "gd18_weight" = 18)) #make gd numeric
+
+litters_data
+```
+
+# Spread (the inverse of gather)
+Note: tidy (like the following) isn't always the easiest to read/interpret
+```{r}
+analysis_result = tibble(
+  group = c("treatment", "treatment", "placebo", "placebo"),
+  time = c("pre", "post", "pre", "post"),
+  mean = c(4, 8, 3.5, 4)
+)
+
+analysis_result
+```
+
+So, we can present the same data in a "less-tidy" way with groups in rows, times in columns, and mean values in table cells.
+```{r}
+spread(analysis_result, key = time, value = mean)
+```
+
+# Binding rows
+
+import and clean datasets:
+```{r}
+fellowship_ring = readxl::read_excel("./sample data/LotR_Words.xlsx", range = "B3:D6") %>%
+  mutate(movie = "fellowship_ring") #add variable 'movie' for the movie title 
+two_towers = readxl::read_excel("./sample data/LotR_Words.xlsx", range = "F3:H6") %>%
+  mutate(movie = "two_towers")
+return_king = readxl::read_excel("./sample data/LotR_Words.xlsx", range = "J3:L6") %>%
+  mutate(movie = "return_king")
+```
+
+Stack tables using 'bind_rows':
+```{r}
+lotr_tidy = bind_rows(fellowship_ring, two_towers, return_king) %>%
+  janitor::clean_names() %>%
+  gather(key = sex, value = words, female:male) %>%
+  mutate(race = tolower(race)) %>% 
+  select(movie, everything()) 
+
+lotr_tidy
+```
+
+# Joining Datasets
+
+There are four major ways join dataframes x and y:
+*Inner: keeps data that appear in both x and y
+*Left: keeps data that appear in x
+        - Left joins are the most common, because they add data from a smaller           table y into a larger table x without removing anything from x.
+*Right: keeps data that appear in y
+*Full: keeps data that appear in either x or y
+
+```{r}
+pup_data = read_csv("./sample data/FAS_pups.csv", col_types = "ciiiii") %>%
+  janitor::clean_names() %>%
+  mutate(sex = recode(sex, `1` = "male", `2` = "female")) 
+
+litter_data = read_csv("./sample data/FAS_litters.csv", col_types = "ccddiiii") %>%
+  janitor::clean_names() %>%
+  select(-pups_survive) %>%
+  mutate(
+    wt_gain = gd18_weight - gd0_weight,
+    group = tolower(group))
+
+fas_data = left_join(pup_data, litter_data, by = "litter_number")
+
+fas_data
+```
+
+# learning Assessment 
+
+```{r}
+surv_git = read_csv("./sample data/surv_program_git.csv") %>%
+  janitor::clean_names() %>%
+  rename(uni = what_is_your_uni, degree = what_is_your_degree_program, git = which_most_accurately_describes_your_experience_with_git) 
+surv_git
+
+surv_os = read_csv("./sample data/surv_os.csv") %>%
+  janitor::clean_names() %>%
+  rename(uni = what_is_your_uni, os = what_operating_system_do_you_use)
+surv_os
+
+left_join(surv_os, surv_git)
+```
+
+
+
+
+
